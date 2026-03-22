@@ -1,55 +1,61 @@
-import os
-from typing import Dict, List
-from dataclasses import dataclass
-from git import Repo
-from transformers import CodeBertModel
-from networkx import DiGraph
+# src/main.py
 
-@dataclass
-class CommitInsight:
-    semantic_changes: Dict
-    impact_score: float
-    knowledge_paths: List[str]
+import asyncio
+import random
 
-class RepoAnalyzer:
-    def __init__(self, repo_path: str):
-        self.repo = Repo(repo_path)
-        self.code_model = CodeBertModel.from_pretrained('microsoft/codebert-base')
-        self.knowledge_graph = DiGraph()
-    
-    def analyze_commit(self, commit_hash: str) -> CommitInsight:
-        # Analyze semantic changes in commit
-        diff = self.repo.git.diff(commit_hash + '^', commit_hash)
-        embeddings = self.code_model(diff)
-        
-        # Calculate impact and knowledge paths
-        impact = self._calculate_impact(embeddings)
-        paths = self._trace_knowledge_flow(commit_hash)
-        
-        return CommitInsight(
-            semantic_changes=self._extract_semantics(embeddings),
-            impact_score=impact,
-            knowledge_paths=paths
-        )
-    
-    def generate_insights(self) -> Dict:
-        insights = []
-        for commit in self.repo.iter_commits():
-            insights.append(self.analyze_commit(commit.hexsha))
-        return self._aggregate_insights(insights)
+class SwarmAgent:
+    def __init__(self, id):
+        self.id = id
+        self.neighbors = []
+        self.state = 'idle'
+        self.consensus_value = None
 
-    def _calculate_impact(self, embeddings):
-        # Implementation for impact calculation
-        pass
+    async def run(self):
+        while True:
+            if self.state == 'idle':
+                await self.discover_neighbors()
+                await self.join_consensus()
+            elif self.state == 'consensus':
+                await self.reach_consensus()
+            await asyncio.sleep(random.uniform(0.1, 1))
 
-    def _trace_knowledge_flow(self, commit_hash):
-        # Implementation for knowledge flow analysis
-        pass
+    async def discover_neighbors(self):
+        # Discover neighboring agents in the swarm
+        self.neighbors = [SwarmAgent(i) for i in range(random.randint(3, 10))]
+        self.state = 'consensus'
 
-    def _extract_semantics(self, embeddings):
-        # Implementation for semantic extraction
-        pass
+    async def join_consensus(self):
+        # Join the decentralized consensus protocol
+        self.consensus_value = random.randint(0, 100)
+        await self.broadcast_value()
 
-    def _aggregate_insights(self, insights):
-        # Implementation for insight aggregation
-        pass
+    async def reach_consensus(self):
+        # Reach consensus with neighboring agents
+        await self.aggregate_values()
+        if self.is_consensus_reached():
+            self.state = 'idle'
+        else:
+            await self.broadcast_value()
+
+    async def broadcast_value(self):
+        # Broadcast the current consensus value to neighbors
+        await asyncio.gather(*[neighbor.receive_value(self.consensus_value) for neighbor in self.neighbors])
+
+    async def receive_value(self, value):
+        # Receive a consensus value from a neighboring agent
+        self.consensus_value = value
+
+    async def aggregate_values(self):
+        # Aggregate the consensus values from neighboring agents
+        self.consensus_value = sum([agent.consensus_value for agent in self.neighbors]) / len(self.neighbors)
+
+    def is_consensus_reached(self):
+        # Check if the swarm has reached a consensus
+        return all(abs(agent.consensus_value - self.consensus_value) < 1 for agent in self.neighbors)
+
+async def main():
+    agents = [SwarmAgent(i) for i in range(10)]
+    await asyncio.gather(*[agent.run() for agent in agents])
+
+if __name__ == '__main__':
+    asyncio.run(main())
