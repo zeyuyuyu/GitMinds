@@ -1,88 +1,92 @@
-import asyncio
+from typing import List, Dict, Optional
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
-from enum import Enum
 from datetime import datetime
 import heapq
 
-class TaskPriority(Enum):
-    LOW = 0
-    MEDIUM = 1
-    HIGH = 2
-    CRITICAL = 3
+@dataclass
+class Task:
+    id: str
+    title: str
+    priority: int
+    due_date: Optional[datetime]
+    tags: List[str]
+    completion_status: bool = False
 
-@dataclass(order=True)
-class ScheduledTask:
-    priority: TaskPriority
-    timestamp: datetime
-    task: Callable
-    args: tuple = ()
-    kwargs: Dict[str, Any] = None
-    name: str = ''
-    
-    def __post_init__(self):
-        self.kwargs = self.kwargs or {}
-
-class TaskScheduler:
+class TaskPrioritizer:
     def __init__(self):
-        self._task_queue: List[ScheduledTask] = []
-        self._running = False
-
-    async def add_task(self, 
-                      task: Callable,
-                      priority: TaskPriority = TaskPriority.MEDIUM,
-                      *args,
-                      **kwargs) -> None:
-        scheduled_task = ScheduledTask(
-            priority=priority,
-            timestamp=datetime.now(),
-            task=task,
-            args=args,
-            kwargs=kwargs,
-            name=task.__name__
-        )
-        heapq.heappush(self._task_queue, scheduled_task)
-
-    async def run(self):
-        self._running = True
-        while self._running and self._task_queue:
-            next_task = heapq.heappop(self._task_queue)
-            try:
-                if asyncio.iscoroutinefunction(next_task.task):
-                    await next_task.task(*next_task.args, **next_task.kwargs)
-                else:
-                    next_task.task(*next_task.args, **next_task.kwargs)
-            except Exception as e:
-                print(f'Error executing task {next_task.name}: {str(e)}')
-
-    def stop(self):
-        self._running = False
-
-# Example usage
-async def main():
-    scheduler = TaskScheduler()
+        self.tasks: List[Task] = []
+        self.priority_queue = []
+        self.tag_weights: Dict[str, float] = {}
     
-    async def high_priority_task(msg: str):
-        print(f'High priority task: {msg}')
-        await asyncio.sleep(1)
+    def add_task(self, task: Task) -> None:
+        self.tasks.append(task)
+        self._update_priority_queue()
+    
+    def complete_task(self, task_id: str) -> None:
+        for task in self.tasks:
+            if task.id == task_id:
+                task.completion_status = True
+                self._update_priority_queue()
+                break
+    
+    def _calculate_dynamic_priority(self, task: Task) -> float:
+        if task.completion_status:
+            return float('-inf')
+        
+        base_priority = task.priority
+        
+        # Factor in due date
+        if task.due_date:
+            time_until_due = (task.due_date - datetime.now()).total_seconds()
+            if time_until_due > 0:
+                urgency_factor = 100000 / (time_until_due + 1)
+                base_priority += urgency_factor
+        
+        # Factor in tag weights
+        tag_priority = sum(self.tag_weights.get(tag, 0) for tag in task.tags)
+        
+        return base_priority + tag_priority
+    
+    def _update_priority_queue(self) -> None:
+        self.priority_queue = []
+        for task in self.tasks:
+            if not task.completion_status:
+                priority = self._calculate_dynamic_priority(task)
+                heapq.heappush(self.priority_queue, (-priority, task.id, task))
+    
+    def get_next_tasks(self, n: int = 5) -> List[Task]:
+        result = []
+        temp_queue = self.priority_queue.copy()
+        
+        while temp_queue and len(result) < n:
+            _, _, task = heapq.heappop(temp_queue)
+            if not task.completion_status:
+                result.append(task)
+        
+        return result
+    
+    def update_tag_weight(self, tag: str, weight: float) -> None:
+        self.tag_weights[tag] = weight
+        self._update_priority_queue()
 
-    def low_priority_task(msg: str):
-        print(f'Low priority task: {msg}')
-
-    # Add tasks with different priorities
-    await scheduler.add_task(
-        high_priority_task,
-        TaskPriority.HIGH,
-        'Important work'
+def main():
+    prioritizer = TaskPrioritizer()
+    
+    # Example usage
+    task1 = Task(
+        id="1",
+        title="Implement core features",
+        priority=5,
+        due_date=datetime(2024, 1, 1),
+        tags=["development", "critical"]
     )
-    await scheduler.add_task(
-        low_priority_task,
-        TaskPriority.LOW,
-        'Background work'
-    )
+    
+    prioritizer.add_task(task1)
+    prioritizer.update_tag_weight("critical", 2.0)
+    
+    next_tasks = prioritizer.get_next_tasks()
+    for task in next_tasks:
+        print(f"Next task: {task.title} (Priority: {task.priority})")
 
-    # Run the scheduler
-    await scheduler.run()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    main()
